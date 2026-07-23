@@ -98,10 +98,15 @@ export function joinGame(code, onStatus){
 
 function guestOnData(msg){
   if(!msg||typeof msg!=='object')return;
-  if(msg.t==='start'){
-    hooks.setNames && hooks.setNames(msg.mode==='coop'?'플레이어 2':'나 (게스트)', msg.mode==='coop'?'플레이어 1':'상대');
-    startMatch(msg.mode, msg.map);
-  }
+  if (msg.t === 'start') {
+  hideScreens();
+  hooks.setNames && hooks.setNames(
+    msg.mode === 'coop' ? '플레이어 2' : '나 (게스트)',
+    msg.mode === 'coop' ? '플레이어 1' : '상대'
+  );
+  startMatch(msg.mode, msg.map);
+}
+
   else if(msg.t==='state') applyStateSnapshot(msg);
   else if(msg.t==='round') handleRoundEvent(msg);
   else if(msg.t==='wave') handleWaveEvent(msg);
@@ -119,6 +124,8 @@ export function cleanup(){
   try{ if(peer)peer.destroy(); }catch(e){}
   peer=null; conn=null;
   NET.connected=false; NET.isHost=false; NET.solo=false;
+  sessionStarted = false;
+
 }
 
 export function copyCode(code){

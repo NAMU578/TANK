@@ -4,7 +4,7 @@ import { hostGame, joinGame, cleanup, copyCode } from './net.js';
 
 const $ = id => document.getElementById(id);
 const screens = { menu:$('menu'), mode:$('modeScreen'), host:$('hostScreen'), join:$('joinScreen') };
-let selectedMode = 'versus', selectedMap = 'bunker', selectedFlow = 'host';
+let selectedMode = 'versus', selectedMap = 'bunker';
 
 function show(name){ Object.values(screens).forEach(s=>s.classList.add('hidden')); if(screens[name])screens[name].classList.remove('hidden'); }
 function hideAll(){ Object.values(screens).forEach(s=>s.classList.add('hidden')); }
@@ -49,6 +49,10 @@ hooks.onHud = (s)=>{
 
 // ===== 메뉴 이벤트 =====
 $('playBtn').addEventListener('click', ()=>{ show('mode'); });
+$('quickJoinConnectBtn').addEventListener('click', ()=>{
+  joinGame($('quickJoinCode').value, (text,cls)=>setStatus('quickJoinStatus', text, cls));
+});
+$('quickJoinCode').addEventListener('keydown', e=>{ if(e.key==='Enter')$('quickJoinConnectBtn').click(); });
 $('soloBtn').addEventListener('click', ()=>{
   NET.solo=true; NET.connected=false; NET.isHost=true;
   game.myId='p1'; game.foeId='p2';
@@ -73,8 +77,7 @@ document.querySelectorAll('[data-map]').forEach(el=>{
     $('flowSection').style.display='block';
   });
 });
-$('goHost').addEventListener('click', ()=>{ selectedFlow='host'; startHosting(); });
-$('goJoin').addEventListener('click', ()=>{ show('join'); $('codeInput').focus(); });
+$('goHost').addEventListener('click', ()=>{ startHosting(); });
 $('modeBack').addEventListener('click', ()=>show('menu'));
 
 function startHosting(){

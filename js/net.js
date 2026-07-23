@@ -5,6 +5,12 @@ import { NET, game, hooks, startMatch, applyStateSnapshot, handleRoundEvent,
 const ROOM_PREFIX = 'tankclash3d-';
 let peer = null, conn = null;
 let pendingMode = 'versus', pendingMap = 'bunker';
+let sessionStarted = false;
+
+function hideScreens() {
+  document.querySelectorAll('.screen').forEach(el => el.classList.add('hidden'));
+}
+
 
 function code4(){
   const c='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s='';

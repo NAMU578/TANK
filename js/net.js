@@ -37,15 +37,18 @@ export function hostGame(mode, mapKey, onCode, onStatus){
   peer.on('connection', c=>{
     conn=c;
     c.on('open', ()=>{
-      NET.connected=true;
-      onStatus('연결됨! 시작합니다.', 'ok');
-      game.myId='p1'; game.foeId='p2';
-      hooks.setNames && hooks.setNames(mode==='coop'?'플레이어 1':'나 (호스트)', mode==='coop'?'플레이어 2':'상대');
-      c.on('data', hostOnData);
-      // 게스트에게 시작 신호
-      c.send({ t:'start', mode:pendingMode, map:pendingMap });
-      startMatch(pendingMode, pendingMap);
-    });
+         NET.connected = true;
+         sessionStarted = false;
+         onStatus('상대 연결됨. 참가자 준비 대기 중...', 'wait');
+         game.myId = 'p1';
+         game.foeId = 'p2';
+         hooks.setNames && hooks.setNames(
+         mode === 'coop' ? '플레이어 1' : '나 (호스트)',
+         mode === 'coop' ? '플레이어 2' : '상대'
+         );
+         c.on('data', hostOnData);
+         });
+
     c.on('close', onDisconnect);
   });
 }

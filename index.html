@@ -117,11 +117,19 @@
     <h1>탱크 <span>클래시</span> 3D</h1>
     <p class="sub">친구와 실시간 3D 탱크 전투. 서버 없이 방 코드만 공유하면 바로 연결됩니다. 대전(1:1)과 협동(웨이브 방어) 모드를 지원합니다.</p>
     <div class="row">
-      <button class="btn primary" id="playBtn">친구와 플레이</button>
+      <button class="btn primary" id="playBtn">방 만들기</button>
     </div>
+    <div class="field" style="margin-top:14px;">
+      <label>코드로 바로 참가</label>
+      <input id="quickJoinCode" maxlength="4" placeholder="----" autocomplete="off" />
+    </div>
+    <div class="row">
+      <button class="btn violet" id="quickJoinConnectBtn">참가하기</button>
+    </div>
+    <div class="status" id="quickJoinStatus"></div>
     <div class="hint">
       <b>플레이 방법</b><br>
-      모드·맵 선택 → 한 명이 <b>방 만들기</b>로 코드를 받아 친구에게 전달 → 친구가 <b>참가하기</b>에 코드 입력 → 자동 시작.
+      호스트만 모드·맵을 고르고 <b>방 만들기</b>로 코드를 생성합니다. 참가자는 첫 화면에서 코드만 입력하면 됩니다.
     </div>
     <div class="back"><span class="link" id="soloBtn">혼자 연습하기 (AI 대전)</span></div>
   </div>
@@ -152,10 +160,9 @@
       </div>
     </div>
     <div id="flowSection" style="display:none;">
-      <div class="section-label">3. 방 만들기 / 참가</div>
+      <div class="section-label">3. 방 만들기</div>
       <div class="row">
         <button class="btn primary" id="goHost">방 만들기</button>
-        <button class="btn violet" id="goJoin">참가하기</button>
       </div>
     </div>
     <div class="back"><span class="link" id="modeBack">← 뒤로</span></div>

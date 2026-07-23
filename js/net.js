@@ -54,10 +54,21 @@ export function hostGame(mode, mapKey, onCode, onStatus){
 }
 
 function hostOnData(msg){
-  if(!msg||typeof msg!=='object')return;
-  if(msg.t==='input') NET.guestInput=msg;
-  else if(msg.t==='shoot') shootFromNet(msg);
+  if (!msg || typeof msg !== 'object') return;
+
+  if (msg.t === 'ready') {
+    if (sessionStarted) return;
+    sessionStarted = true;
+    hideScreens();
+    send({ t:'start', mode:pendingMode, map:pendingMap });
+    startMatch(pendingMode, pendingMap);
+    return;
+  }
+
+  if (msg.t === 'input') NET.guestInput = msg;
+  else if (msg.t === 'shoot') shootFromNet(msg);
 }
+
 
 export function joinGame(code, onStatus){
   code=(code||'').trim().toUpperCase();
@@ -70,11 +81,16 @@ export function joinGame(code, onStatus){
     let opened=false;
     const to=setTimeout(()=>{ if(!opened)onStatus('연결 실패: 코드를 확인하세요.','err'); },8000);
     conn.on('open', ()=>{
-      opened=true; clearTimeout(to); NET.connected=true;
-      onStatus('연결됨! 시작합니다.','ok');
-      game.myId='p2'; game.foeId='p1';
-      conn.on('data', guestOnData);
-    });
+  opened = true;
+  clearTimeout(to);
+  NET.connected = true;
+  onStatus('연결됨! 시작합니다.', 'ok');
+  game.myId = 'p2';
+  game.foeId = 'p1';
+  conn.on('data', guestOnData);
+  send({ t:'ready' });
+});
+
     conn.on('close', onDisconnect);
   });
   peer.on('error', err=> onStatus('연결 오류: '+err.type,'err'));

@@ -1,6 +1,7 @@
 // main.js — 진입점: UI 연결 + 게임/네트워크 초기화
-import { initGame, startMatch, resetToMenu, hooks, NET, game } from './game.js';
-import { hostGame, joinGame, cleanup, copyCode } from './net.js';
+import { initGame, startMatch, resetToMenu, hooks, NET, game,
+         UPGRADES, buyUpgrade, closeShopAndContinue } from './game.js';
+import { hostGame, joinGame, cleanup, copyCode, requestBuy } from './net.js';
 
 const $ = id => document.getElementById(id);
 const screens = { menu:$('menu'), mode:$('modeScreen'), host:$('hostScreen'), join:$('joinScreen') };
@@ -17,7 +18,7 @@ hooks.onBanner = (text, color, dur)=>{
   if(dur)window.__bannerT=setTimeout(()=>{ b.style.display='none'; }, dur);
 };
 hooks.setNames = (me, foe)=>{ $('meName').textContent=me; $('foeName').textContent=foe; };
-hooks.onModeEnd = ()=>{ cleanup(); resetToMenu(); show('menu'); };
+hooks.onModeEnd = ()=>{ $('shop').classList.remove('show'); cleanup(); resetToMenu(); show('menu'); };
 hooks.onHud = (s)=>{
   $('meHp').style.width=Math.max(0,s.meHp)+'%';
   if(s.mode==='versus'){
@@ -46,6 +47,49 @@ hooks.onHud = (s)=>{
   if(s.rapid>0)buffs+='⚡ ';
   $('buffs').textContent=buffs;
 };
+
+// ===== 협동 업그레이드 상점 =====
+function renderShop(info){
+  $('shopWave').textContent = info.wave;
+  $('shopPoints').textContent = game.coopScore;
+  const grid = $('shopGrid');
+  grid.innerHTML = '';
+  Object.entries(UPGRADES).forEach(([key, u])=>{
+    const afford = game.coopScore >= u.cost;
+    const el = document.createElement('div');
+    el.className = 'shop-item' + (afford?'':' disabled');
+    el.innerHTML = `<div class="ico">${u.icon}</div>
+      <div class="nm">${u.name}</div>
+      <div class="ds">${u.desc}</div>
+      <div class="cost">${u.cost} P</div>`;
+    el.addEventListener('click', ()=>{
+      if(game.coopScore < u.cost) return;
+      if(NET.connected && !NET.isHost){
+        // 게스트: 호스트에 구매 요청 (호스트가 처리 후 upgApplied로 되돌려줌)
+        requestBuy(key);
+      } else {
+        buyUpgrade(key);
+        renderShop({ wave: info.wave });   // 즉시 갱신
+      }
+    });
+    grid.appendChild(el);
+  });
+  // 다음 웨이브 버튼: 호스트/솔로만 사용. 게스트는 대기 안내.
+  const isHostSide = NET.isHost || NET.solo || !NET.connected;
+  $('shopNextBtn').style.display = isHostSide ? 'inline-block' : 'none';
+  $('shopWait').style.display = isHostSide ? 'none' : 'block';
+}
+
+hooks.onShop = (info)=>{
+  $('shop').classList.add('show');
+  renderShop(info);
+};
+hooks.onShopClose = ()=>{ $('shop').classList.remove('show'); };
+
+$('shopNextBtn').addEventListener('click', ()=>{
+  $('shop').classList.remove('show');
+  closeShopAndContinue();
+});
 
 // ===== 메뉴 이벤트 =====
 $('playBtn').addEventListener('click', ()=>{ show('mode'); });

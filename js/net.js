@@ -1,7 +1,7 @@
 // net.js — PeerJS P2P 연결 (방 코드 기반)
 import { NET, game, hooks, startMatch, applyStateSnapshot, handleRoundEvent,
          handleWaveEvent, shootFromNet, resetToMenu,
-         handleShopEvent, handleUpgApplied, buyUpgrade } from './game.js';
+         handleCardsEvent, hostHandlePick } from './game.js';
 
 const ROOM_PREFIX = 'tankclash3d-';
 let peer = null, conn = null;
@@ -59,7 +59,7 @@ function hostOnData(msg){
   }
   else if(msg.t==='input') NET.guestInput=msg;
   else if(msg.t==='shoot') shootFromNet(msg);
-  else if(msg.t==='buyReq') buyUpgrade(msg.key);   // 게스트 구매 요청을 호스트가 처리
+  else if(msg.t==='pickReq') hostHandlePick(msg.key);   // 게스트 카드 선택 요청을 호스트가 처리
 }
 
 export function joinGame(code, onStatus){
@@ -96,12 +96,11 @@ function guestOnData(msg){
   else if(msg.t==='state') applyStateSnapshot(msg);
   else if(msg.t==='round') handleRoundEvent(msg);
   else if(msg.t==='wave') handleWaveEvent(msg);
-  else if(msg.t==='shop') handleShopEvent(msg);
-  else if(msg.t==='upgApplied') handleUpgApplied(msg);
+  else if(msg.t==='cards') handleCardsEvent(msg);
 }
 
 // 게스트가 상점에서 구매 요청을 호스트로 전송
-export function requestBuy(key){ send({ t:'buyReq', key }); }
+export function requestPick(key){ send({ t:'pickReq', key }); }
 
 function onDisconnect(){
   if(game.phase==='menu')return;

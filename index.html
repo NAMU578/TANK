@@ -107,27 +107,45 @@
   .loading{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:30;
     background:#060812;color:var(--muted);font-size:1.1rem;}
 
-  /* 협동 업그레이드 상점 */
+  /* 협동 카드 선택 (로그라이크식 강화) */
   #shop{position:fixed;inset:0;z-index:18;display:none;align-items:center;justify-content:center;padding:20px;
-    background:rgba(4,6,14,.72);backdrop-filter:blur(6px);}
+    background:rgba(4,6,14,.78);backdrop-filter:blur(7px);}
   #shop.show{display:flex;}
-  .shop-card{width:min(640px,100%);background:var(--panel);border:1px solid var(--line);
-    border-radius:24px;box-shadow:0 30px 80px rgba(0,0,0,.6);padding:28px;text-align:center;}
-  .shop-card h2{margin:0 0 6px;font-size:1.7rem;}
+  .shop-card{width:min(760px,100%);text-align:center;}
+  .shop-card h2{margin:0 0 6px;font-size:2rem;text-shadow:0 4px 20px rgba(0,0,0,.6);}
   .shop-card h2 span{color:var(--gold);}
-  .shop-sub{color:var(--muted);margin:0 0 18px;}
+  .shop-sub{color:var(--muted);margin:0 0 8px;}
   .shop-sub b{color:var(--gold);}
-  .shop-timer{color:var(--accent);font-weight:800;margin:-6px 0 14px;}
-  .shop-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:18px;}
-  .shop-item{padding:16px 12px;border-radius:16px;border:1px solid var(--line);
-    background:rgba(255,255,255,.03);cursor:pointer;transition:.15s;}
-  .shop-item:hover:not(.disabled){border-color:var(--accent);background:rgba(89,224,255,.08);transform:translateY(-2px);}
-  .shop-item.disabled{opacity:.4;cursor:not-allowed;}
-  .shop-item .ico{font-size:1.9rem;}
-  .shop-item .nm{font-weight:800;margin:6px 0 2px;}
-  .shop-item .ds{color:var(--muted);font-size:.8rem;line-height:1.4;min-height:34px;}
-  .shop-item .cost{margin-top:8px;font-weight:800;color:var(--gold);}
-  .shop-wait{color:var(--muted);margin-top:10px;font-size:.9rem;}
+  .shop-timer{color:var(--accent);font-weight:800;margin:0 0 20px;font-size:.95rem;}
+  .shop-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:8px;}
+  .card-pick{padding:26px 16px;border-radius:20px;border:2px solid var(--line);
+    background:linear-gradient(180deg,rgba(30,38,66,.95),rgba(16,20,42,.95));
+    cursor:pointer;transition:.18s;box-shadow:0 14px 40px rgba(0,0,0,.4);}
+  .card-pick:hover{border-color:var(--gold);transform:translateY(-6px) scale(1.03);
+    box-shadow:0 22px 50px rgba(255,209,102,.25);}
+  .card-pick .ico{font-size:3rem;filter:drop-shadow(0 4px 12px rgba(0,0,0,.5));}
+  .card-pick .nm{font-weight:900;margin:12px 0 6px;font-size:1.2rem;}
+  .card-pick .ds{color:var(--muted);font-size:.9rem;line-height:1.5;min-height:44px;}
+  .card-pick .key{margin-top:10px;color:var(--accent);font-weight:800;font-size:.85rem;}
+  .shop-wait{color:var(--muted);margin-top:14px;font-size:.95rem;}
+
+  /* 콤보 표시 */
+  #combo{position:fixed;top:120px;left:50%;transform:translateX(-50%);z-index:12;
+    pointer-events:none;text-align:center;display:none;}
+  #combo.show{display:block;animation:comboPop .3s ease;}
+  #combo .cnum{font-size:3.2rem;font-weight:900;color:var(--gold);
+    text-shadow:0 0 20px rgba(255,209,102,.8),0 4px 16px rgba(0,0,0,.6);line-height:1;}
+  #combo .clabel{font-size:1rem;font-weight:800;color:#fff;letter-spacing:2px;
+    text-shadow:0 2px 8px rgba(0,0,0,.8);}
+  @keyframes comboPop{0%{transform:translateX(-50%) scale(1.6);}100%{transform:translateX(-50%) scale(1);}}
+
+  /* 데미지 넘버 레이어 */
+  #dmgLayer{position:fixed;inset:0;z-index:11;pointer-events:none;overflow:hidden;}
+  .dmgnum{position:absolute;font-weight:900;transform:translate(-50%,-50%);
+    text-shadow:0 2px 6px rgba(0,0,0,.9);will-change:transform,opacity;}
+
+  /* 화면 플래시 */
+  #flash{position:fixed;inset:0;z-index:14;pointer-events:none;opacity:0;transition:opacity .12s;}
 </style>
 </head>
 <body>
@@ -251,17 +269,23 @@
 <div class="crosshair" id="crosshair"></div>
 <div id="banner"><div class="msg" id="bannerMsg"></div></div>
 
-<!-- 협동 업그레이드 상점 -->
+<!-- 협동 카드 선택 (로그라이크식 강화) -->
 <div id="shop">
   <div class="shop-card">
-    <h2>웨이브 <span id="shopWave">1</span> 클리어 — 증강 상점</h2>
-    <p class="shop-sub">포인트로 업그레이드를 구매하세요. 남은 포인트: <b id="shopPoints">0</b></p>
-    <div class="shop-timer" id="shopTimer">12초 뒤 자동으로 다음 웨이브가 시작됩니다</div>
+    <h2>웨이브 <span id="shopWave">1</span> 클리어! <span style="color:var(--gold)">강화 선택</span></h2>
+    <p class="shop-sub">보유 포인트: <b id="shopPoints">0</b></p>
+    <div class="shop-timer" id="shopTimer">카드를 선택하세요 — 5초 뒤 자동 선택</div>
     <div class="shop-grid" id="shopGrid"></div>
-    <button class="btn primary" id="shopNextBtn" style="margin-top:8px;">다음 웨이브 시작 →</button>
-    <p class="shop-wait" id="shopWait" style="display:none;">호스트가 다음 웨이브를 시작하기를 기다리는 중...</p>
+    <p class="shop-wait" id="shopWait" style="display:none;">호스트가 강화를 선택하는 중...</p>
   </div>
 </div>
+
+<!-- 콤보 -->
+<div id="combo"><div class="cnum" id="comboNum">0</div><div class="clabel">COMBO</div></div>
+<!-- 데미지 넘버 -->
+<div id="dmgLayer"></div>
+<!-- 화면 플래시 -->
+<div id="flash"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
 <script type="importmap">

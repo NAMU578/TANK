@@ -117,6 +117,7 @@
   .shop-card h2 span{color:var(--gold);}
   .shop-sub{color:var(--muted);margin:0 0 18px;}
   .shop-sub b{color:var(--gold);}
+  .shop-timer{color:var(--accent);font-weight:800;margin:-6px 0 14px;}
   .shop-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:18px;}
   .shop-item{padding:16px 12px;border-radius:16px;border:1px solid var(--line);
     background:rgba(255,255,255,.03);cursor:pointer;transition:.15s;}
@@ -255,6 +256,7 @@
   <div class="shop-card">
     <h2>웨이브 <span id="shopWave">1</span> 클리어 — 증강 상점</h2>
     <p class="shop-sub">포인트로 업그레이드를 구매하세요. 남은 포인트: <b id="shopPoints">0</b></p>
+    <div class="shop-timer" id="shopTimer">12초 뒤 자동으로 다음 웨이브가 시작됩니다</div>
     <div class="shop-grid" id="shopGrid"></div>
     <button class="btn primary" id="shopNextBtn" style="margin-top:8px;">다음 웨이브 시작 →</button>
     <p class="shop-wait" id="shopWait" style="display:none;">호스트가 다음 웨이브를 시작하기를 기다리는 중...</p>

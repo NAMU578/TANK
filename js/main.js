@@ -1,7 +1,7 @@
 // main.js — 진입점: UI 연결 + 게임/네트워크 초기화
 import { initGame, startMatch, resetToMenu, hooks, NET, game,
-         UPGRADES, buyUpgrade, closeShopAndContinue } from './game.js';
-import { hostGame, joinGame, cleanup, copyCode, requestBuy } from './net.js';
+         UPGRADES, chooseCard, requestChooseCard } from './game.js';
+import { hostGame, joinGame, cleanup, copyCode, requestPick } from './net.js';
 
 const $ = id => document.getElementById(id);
 const screens = { menu:$('menu'), mode:$('modeScreen'), host:$('hostScreen'), join:$('joinScreen') };
@@ -25,7 +25,7 @@ hooks.onBanner = (text, color, dur)=>{
   if(dur)window.__bannerT=setTimeout(()=>{ b.style.display='none'; }, dur);
 };
 hooks.setNames = (me, foe)=>{ $('meName').textContent=me; $('foeName').textContent=foe; };
-hooks.onModeEnd = ()=>{ clearShopTimers(); $('shop').classList.remove('show'); cleanup(); resetToMenu(); show('menu'); };
+hooks.onModeEnd = ()=>{ clearShopTimers(); $('shop').classList.remove('show'); $('combo').classList.remove('show'); $('dmgLayer').innerHTML=''; cleanup(); resetToMenu(); show('menu'); };
 hooks.onHud = (s)=>{
   $('meHp').style.width=Math.max(0,s.meHp)+'%';
   if(s.mode==='versus'){
@@ -55,83 +55,99 @@ hooks.onHud = (s)=>{
   $('buffs').textContent=buffs;
 };
 
-// ===== 협동 업그레이드 상점 =====
-function renderShop(info){
+// ===== 협동 카드 선택 (로그라이크식 강화) =====
+const CARD_KEYS = ['1','2','3'];
+function pickCard(key){
+  clearShopTimers();
+  $('shop').classList.remove('show');
+  const isHostSide = NET.isHost || NET.solo || !NET.connected;
+  if (isHostSide) chooseCard(key);
+  else requestChooseCard(key);
+}
+
+function renderCards(info){
   $('shopWave').textContent = info.wave;
   $('shopPoints').textContent = game.coopScore;
   const grid = $('shopGrid');
   grid.innerHTML = '';
-  Object.entries(UPGRADES).forEach(([key, u])=>{
-    const afford = game.coopScore >= u.cost;
+  const cards = info.cards || [];
+  const isHostSide = NET.isHost || NET.solo || !NET.connected;
+  cards.forEach((key, idx)=>{
+    const u = UPGRADES[key];
+    if(!u) return;
     const el = document.createElement('div');
-    el.className = 'shop-item' + (afford?'':' disabled');
+    el.className = 'card-pick';
     el.innerHTML = `<div class="ico">${u.icon}</div>
       <div class="nm">${u.name}</div>
       <div class="ds">${u.desc}</div>
-      <div class="cost">${u.cost} P</div>`;
-    el.addEventListener('click', ()=>{
-      if(game.coopScore < u.cost) return;
-      if(NET.connected && !NET.isHost){
-        // 게스트: 호스트에 구매 요청 (호스트가 처리 후 upgApplied로 되돌려줌)
-        requestBuy(key);
-      } else {
-        buyUpgrade(key);
-        renderShop({ wave: info.wave });   // 즉시 갱신
-      }
-    });
+      <div class="key">[ ${CARD_KEYS[idx]} ]</div>`;
+    if(isHostSide) el.addEventListener('click', ()=>pickCard(key));
     grid.appendChild(el);
   });
-  // 다음 웨이브 버튼: 호스트/솔로만 사용. 게스트는 대기 안내.
-  const isHostSide = NET.isHost || NET.solo || !NET.connected;
-  $('shopNextBtn').style.display = isHostSide ? 'inline-block' : 'none';
   $('shopWait').style.display = isHostSide ? 'none' : 'block';
+  $('shopTimer').style.display = isHostSide ? 'block' : 'none';
 }
 
-hooks.onShop = (info)=>{
+hooks.onCardPick = (info)=>{
+  window.__cards = info.cards || [];
   $('shop').classList.add('show');
-  renderShop(info);
+  renderCards(info);
   clearShopTimers();
   const isHostSide = NET.isHost || NET.solo || !NET.connected;
   if (isHostSide) {
-    let left = 12;
-    $('shopTimer').textContent = `${left}초 뒤 자동으로 다음 웨이브가 시작됩니다`;
+    let left = 5;
+    $('shopTimer').textContent = `카드를 선택하세요 — ${left}초 뒤 자동 선택`;
     shopCountdownTimer = setInterval(()=>{
       left -= 1;
-      if (left <= 0) {
-        clearShopTimers();
-        $('shop').classList.remove('show');
-        closeShopAndContinue();
-        return;
-      }
-      $('shopTimer').textContent = `${left}초 뒤 자동으로 다음 웨이브가 시작됩니다`;
+      if (left <= 0) { clearShopTimers(); const c=window.__cards||[]; pickCard(c[0]||'dmg'); return; }
+      $('shopTimer').textContent = `카드를 선택하세요 — ${left}초 뒤 자동 선택`;
     }, 1000);
-    shopAutoTimer = setTimeout(()=>{
-      clearShopTimers();
-      $('shop').classList.remove('show');
-      closeShopAndContinue();
-    }, 12000);
-  } else {
-    $('shopTimer').textContent = '호스트가 다음 웨이브를 시작하면 자동으로 진행됩니다';
   }
 };
 hooks.onShopClose = ()=>{ clearShopTimers(); $('shop').classList.remove('show'); };
 
-$('shopNextBtn').addEventListener('click', ()=>{
-  clearShopTimers();
-  $('shop').classList.remove('show');
-  closeShopAndContinue();
+// 숫자키 1/2/3로 카드 선택
+window.addEventListener('keydown', e=>{
+  if (!$('shop').classList.contains('show')) return;
+  const isHostSide = NET.isHost || NET.solo || !NET.connected;
+  if (!isHostSide) return;
+  const i = CARD_KEYS.indexOf(e.key);
+  if (i >= 0) { const c=window.__cards||[]; if(c[i]) pickCard(c[i]); }
 });
 
-window.addEventListener('keydown', e=>{
-  if (e.key === 'Enter' && $('shop').classList.contains('show')) {
-    const isHostSide = NET.isHost || NET.solo || !NET.connected;
-    if (isHostSide) {
-      clearShopTimers();
-      $('shop').classList.remove('show');
-      closeShopAndContinue();
-    }
+// ===== 콤보 / 데미지넘버 / 화면 플래시 =====
+hooks.onCombo = (info)=>{
+  const el = $('combo');
+  if (info.combo >= 3) {
+    $('comboNum').textContent = 'x' + info.combo;
+    el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+  } else {
+    el.classList.remove('show');
   }
-});
+};
+
+hooks.onDamageNumbers = (list)=>{
+  const layer = $('dmgLayer');
+  layer.innerHTML = '';
+  for (const d of list) {
+    const s = document.createElement('div');
+    s.className = 'dmgnum';
+    s.textContent = d.amount;
+    s.style.left = d.sx + 'px';
+    s.style.top = d.sy + 'px';
+    s.style.opacity = d.alpha;
+    s.style.color = d.big ? '#ff5566' : '#ffe08a';
+    s.style.fontSize = (d.big ? 1.8 : 1.2) + 'rem';
+    layer.appendChild(s);
+  }
+};
+
+hooks.onFlash = (color, strength)=>{
+  const f = $('flash');
+  f.style.background = color;
+  f.style.opacity = String(strength);
+  setTimeout(()=>{ f.style.opacity = '0'; }, 120);
+};
 
 // ===== 메뉴 이벤트 =====
 $('playBtn').addEventListener('click', ()=>{ show('mode'); });

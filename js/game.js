@@ -14,12 +14,15 @@ const VERSUS_WIN_SCORE = 10;   // 대전: 10점 선취승
 // ===== 협동 업그레이드(증강) 상점 정의 =====
 // 각 웨이브 클리어 시 포인트로 구매. cost는 coopScore에서 차감.
 export const UPGRADES = {
-  dmg:    { name: '화력 강화',   desc: '포탄 데미지 +6',        icon: '💥', cost: 150 },
-  reload: { name: '속사 장전',   desc: '재장전 속도 15% 단축',   icon: '⚡', cost: 150 },
-  maxhp:  { name: '중장갑',      desc: '최대 체력 +30 · 즉시 회복', icon: '🛡️', cost: 200 },
-  speed:  { name: '기동 강화',   desc: '이동 속도 +15%',         icon: '🏎️', cost: 120 },
-  life:   { name: '예비 부대',   desc: '공용 목숨 +1',           icon: '❤️', cost: 250 },
-  regen:  { name: '자가 수리',   desc: '초당 체력 자동 회복 +2',  icon: '🔧', cost: 180 },
+  dmg:    { name: '화력 강화',   desc: '포탄 데미지 +8',            icon: '💥' },
+  reload: { name: '속사 장전',   desc: '재장전 18% 단축',           icon: '⚡' },
+  maxhp:  { name: '중장갑',      desc: '최대 체력 +40 · 즉시 회복',  icon: '🛡️' },
+  speed:  { name: '기동 강화',   desc: '이동 속도 +18%',            icon: '🏎️' },
+  life:   { name: '예비 부대',   desc: '공용 목숨 +1',              icon: '❤️' },
+  regen:  { name: '자가 수리',   desc: '초당 체력 회복 +3',         icon: '🔧' },
+  multi:  { name: '확산 포탄',   desc: '발사 시 좌우로 추가 포탄',   icon: '🔱' },
+  pierce: { name: '관통탄',      desc: '포탄이 적 1명 더 관통',      icon: '🎯' },
+  vamp:   { name: '흡혈 장갑',   desc: '준 피해의 15% 체력 흡수',    icon: '🧛' },
 };
 
 // ===== 맵 정의 (다중 맵) =====
@@ -66,17 +69,23 @@ export const game = {
   wave: 1, coopScore: 0, coopLives: 5,   // 협동 모드용
   boostFuel: 100,
   // 협동 업그레이드 누적치 (호스트 권한으로 관리)
-  upg: { dmgBonus: 0, reloadMul: 1, maxHpBonus: 0, speedMul: 1, regen: 0 },
+  upg: { dmgBonus: 0, reloadMul: 1, maxHpBonus: 0, speedMul: 1, regen: 0, multishot: 0, pierce: 0, vamp: 0 },
 };
 
-// 카메라 조종 상태 (화살표 키) — yaw 회전 + 줌
-const camCtl = { yaw: 0, dist: 26, height: 28 };
+// 카메라 조종 상태 (화살표 키) — yaw 회전 + 줌 + 흔들림
+const camCtl = { yaw: 0, dist: 26, height: 28, shake: 0 };
+
+// 도파민 장치: 콤보 / 히트스톱 / 데미지넘버
+const juice = { combo: 0, comboTimer: 0, hitStop: 0 };
+let damageNumbers = [];   // 화면에 뜨는 데미지 숫자
+let coins = [];           // 처치 시 떨어지는 코인(자석으로 빨려옴)
 
 const AI = { active: false, moveDir: 1, retarget: 0, shot: 0 };
 export const NET = { isHost: false, connected: false, solo: false, guestInput: null, sendFn: null };
 
 // 콜백 (UI 연결용)
-export const hooks = { onBanner: null, onHud: null, onModeEnd: null, onShop: null, onShopClose: null };
+export const hooks = { onBanner: null, onHud: null, onModeEnd: null, onShop: null, onShopClose: null,
+  onCombo: null, onDamageNumbers: null, onCardPick: null, onFlash: null };
 
 // ===== 초기화 =====
 export function initGame(canvas) {
@@ -364,11 +373,24 @@ function tryShoot() {
   lastShot = now;
   refreshAimFromMouse();
   const dir = me.turret;
-  const bx = me.x + Math.sin(dir)*4.6, bz = me.z + Math.cos(dir)*4.6;
   if (NET.connected && !NET.isHost) {
-    NET.sendFn && NET.sendFn({ t:'shoot', ownerId: game.myId, dir, x:bx, z:bz });
+    NET.sendFn && NET.sendFn({ t:'shoot', ownerId: game.myId, dir, x:me.x, z:me.z });
   } else {
-    spawnBullet(game.myId, bx, bz, dir, currentBulletDmg());
+    fireSpread(game.myId, me.x, me.z, dir, currentBulletDmg());
+  }
+  camCtl.shake = Math.max(camCtl.shake, 0.12);
+}
+
+// 멀티샷 반영 발사
+function fireSpread(owner, mx, mz, dir, dmg) {
+  const extra = (game.mode==='coop' ? (game.upg.multishot||0) : 0);
+  const spread = 0.14;
+  const angles = [0];
+  for (let i=1;i<=extra;i++){ angles.push(i*spread); angles.push(-i*spread); }
+  for (const a of angles) {
+    const d = dir + a;
+    const bx = mx + Math.sin(d)*4.6, bz = mz + Math.cos(d)*4.6;
+    spawnBullet(owner, bx, bz, d, dmg);
   }
 }
 
@@ -379,12 +401,16 @@ export function startMatch(mode, mapKey = 'bunker') {
   document.getElementById('hud').classList.add('show');
   const ch = document.getElementById('crosshair'); if (ch) ch.style.display = 'block';
   // 카메라 조종 상태 초기화 + 즉시 스냅(수렴 지연 방지)
-  camCtl.yaw = 0; camCtl.dist = 26; camCtl.height = camCtl.dist * 1.08 + 2;
+  camCtl.yaw = 0; camCtl.dist = 26; camCtl.height = camCtl.dist * 1.08 + 2; camCtl.shake = 0;
   if (camera) {
     camera.position.set(0, camCtl.height, camCtl.dist);
   }
   // 업그레이드 초기화
-  game.upg = { dmgBonus: 0, reloadMul: 1, maxHpBonus: 0, speedMul: 1, regen: 0 };
+  game.upg = { dmgBonus: 0, reloadMul: 1, maxHpBonus: 0, speedMul: 1, regen: 0, multishot: 0, pierce: 0, vamp: 0 };
+  // 도파민 상태 초기화
+  juice.combo = 0; juice.comboTimer = 0; juice.hitStop = 0;
+  coins.forEach(c=>scene.remove(c.mesh)); coins = [];
+  damageNumbers = [];
   if (mode === 'versus') {
     game.scoreMe = 0; game.scoreFoe = 0; game.round = 1;
     startRound();
@@ -458,13 +484,43 @@ function startCoopWave() {
   game.phase = 'play';
   spawnCoopTanks();
   bullets.forEach(b=>scene.remove(b.mesh)); bullets=[];
-  const count = 2 + game.wave;              // 웨이브마다 적 증가
-  for (let i=0;i<count;i++) spawnEnemy();
-  if (game.wave % 2 === 0) spawnPowerup();
-  hooks.onBanner && hooks.onBanner('웨이브 '+game.wave+' 시작!', '#ffd166', 1500);
+
+  const w = game.wave;
+  const isBoss = (w % 5 === 0);
+
+  if (isBoss) {
+    spawnEnemy('boss');
+    // 보스 호위병
+    for (let i=0;i<2;i++) spawnEnemy('rusher');
+    hooks.onBanner && hooks.onBanner('⚠️ 보스 웨이브 '+w+' ⚠️', '#ff2266', 1800);
+  } else {
+    const total = 3 + Math.floor(w * 1.4);
+    for (let i=0;i<total;i++){
+      const r = Math.random();
+      let key = 'grunt';
+      if (w>=2 && r<0.28) key='rusher';
+      else if (w>=3 && r<0.42) key='bomber';
+      else if (w>=4 && r<0.55) key='tank';
+      // 시간차 스폰 (한 번에 안 쏟아지게)
+      setTimeout(()=>{ if(game.phase==='play') spawnEnemy(key); }, i*220);
+    }
+    hooks.onBanner && hooks.onBanner('웨이브 '+w+' 시작!', '#ffd166', 1400);
+  }
+  if (w % 2 === 0) spawnPowerup();
 }
 
-function spawnEnemy() {
+// 적 타입별 스펙 (도파민: 다양한 위협 + 잡는 손맛)
+const ENEMY_TYPES = {
+  grunt:  { hpMul:1.0, spd:0.55, size:1.0, color:0x8a2233, dmg:12, reward:50,  score:1 },
+  rusher: { hpMul:0.55,spd:1.15, size:0.8, color:0xff6a2c, dmg:8,  reward:40,  score:1 },
+  tank:   { hpMul:2.6, spd:0.32, size:1.5, color:0x5a3a8a, dmg:20, reward:120, score:2 },
+  bomber: { hpMul:0.7, spd:0.9,  size:0.95,color:0xffcc33, dmg:0,  reward:80,  score:1, suicide:true },
+  boss:   { hpMul:14,  spd:0.4,  size:2.6, color:0xff2266, dmg:26, reward:800, score:10, boss:true },
+};
+
+function spawnEnemy(typeKey) {
+  const key = typeKey || 'grunt';
+  const T = ENEMY_TYPES[key];
   const edge = Math.floor(Math.random()*4);
   let x, z;
   const m = ARENA-6;
@@ -473,57 +529,77 @@ function spawnEnemy() {
   else if(edge===2){x=(Math.random()-0.5)*ARENA;z=-m;}
   else{x=(Math.random()-0.5)*ARENA;z=m;}
   const model = createEnemyModel();
+  model.scale.setScalar(T.size);
+  // 타입 색상 적용
+  model.traverse(o=>{ if(o.isMesh && o.material && o.material.color && o.material.emissive===undefined){} });
   scene.add(model);
-  const hp = 40 + game.wave*8;
-  enemies.push({ id:'e'+Date.now()+Math.random(), mesh:model, hp, maxHp:hp,
-    x, z, angle:0, turret:0, alive:true, shot: Math.random()*1.5, moveDir:1, retarget:0 });
+  const hp = Math.round((30 + game.wave*7) * T.hpMul);
+  enemies.push({ id:'e'+Date.now()+Math.random().toString(36).slice(2), mesh:model, hp, maxHp:hp,
+    x, z, angle:0, turret:0, alive:true, shot: Math.random()*1.5, moveDir:1, retarget:0,
+    etype:key, spd:T.spd, dmg:T.dmg, reward:T.reward, scoreVal:T.score, suicide:!!T.suicide, boss:!!T.boss });
 }
 
+let pendingCards = [];
 function coopWaveComplete() {
   if (game.phase !== 'play') return;   // 중복 호출 방지
   game.phase = 'wavebreak';
   const bonus = game.wave * 100;
   game.coopScore += bonus;
-  hooks.onBanner && hooks.onBanner('웨이브 '+game.wave+' 클리어! +'+bonus, '#74f0a7', 1600);
-  // 호스트만 상점을 열고, 게스트에게도 상점 열기 신호 전송
+  hooks.onBanner && hooks.onBanner('웨이브 '+game.wave+' 클리어! +'+bonus, '#74f0a7', 1400);
+  hooks.onFlash && hooks.onFlash('#74f0a7', 0.25);
+
+  // 짧게 쉬고 → 카드 3장 제시 (로그라이크식 즉시 강화)
   setTimeout(()=>{
     if (game.phase !== 'wavebreak') return;
-    game.phase = 'shopping';
-    if (NET.connected && NET.isHost) NET.sendFn && NET.sendFn({ t:'shop', score:game.coopScore, lives:game.coopLives, wave:game.wave });
-    hooks.onShop && hooks.onShop({ score: game.coopScore, wave: game.wave });
-  }, 1700);
+    game.phase = 'cardpick';
+    pendingCards = pickThreeCards();
+    if (NET.connected && NET.isHost)
+      NET.sendFn && NET.sendFn({ t:'cards', cards:pendingCards, score:game.coopScore, lives:game.coopLives, wave:game.wave });
+    hooks.onCardPick && hooks.onCardPick({ cards: pendingCards, wave: game.wave });
+  }, 1200);
 }
 
-// 업그레이드 구매 (호스트 권한). 성공 시 true.
-export function buyUpgrade(key) {
-  const u = UPGRADES[key];
-  if (!u) return false;
-  if (game.coopScore < u.cost) return false;
-  game.coopScore -= u.cost;
+// 카드 3장 랜덤 추출 (중복 없이)
+function pickThreeCards() {
+  const keys = Object.keys(UPGRADES);
+  const pool = [...keys];
+  const out = [];
+  for (let i=0;i<3 && pool.length;i++){
+    const idx = Math.floor(Math.random()*pool.length);
+    out.push(pool.splice(idx,1)[0]);
+  }
+  return out;
+}
+
+// 카드 선택 확정 → 강화 적용 후 다음 웨이브 (호스트/솔로 권한)
+export function chooseCard(key) {
+  if (game.phase !== 'cardpick') return;
   applyUpgrade(key);
-  // 호스트는 갱신된 상태를 게스트에 통보
+  hooks.onFlash && hooks.onFlash('#ffd166', 0.3);
+  camCtl.shake = Math.max(camCtl.shake, 0.4);
+  game.wave++;
   if (NET.connected && NET.isHost)
-    NET.sendFn && NET.sendFn({ t:'upgApplied', key, score:game.coopScore, lives:game.coopLives, upg:game.upg });
-  return true;
+    NET.sendFn && NET.sendFn({ t:'wave', wave:game.wave, score:game.coopScore, lives:game.coopLives, upg:game.upg });
+  hooks.onShopClose && hooks.onShopClose();
+  startCoopWave();
 }
 
 function applyUpgrade(key) {
   const me = tanks[game.myId] || tanks.p1;
-  if (key === 'dmg')    game.upg.dmgBonus += 6;
-  else if (key === 'reload') game.upg.reloadMul *= 0.85;
-  else if (key === 'maxhp')  { game.upg.maxHpBonus += 30; if (me) me.hp = MAX_HP + game.upg.maxHpBonus; }
-  else if (key === 'speed')  game.upg.speedMul *= 1.15;
+  if (key === 'dmg')    game.upg.dmgBonus += 8;
+  else if (key === 'reload') game.upg.reloadMul *= 0.82;
+  else if (key === 'maxhp')  { game.upg.maxHpBonus += 40; Object.values(tanks).forEach(t=>{ if(!t.id.startsWith('e')) t.hp = MAX_HP + game.upg.maxHpBonus; }); }
+  else if (key === 'speed')  game.upg.speedMul *= 1.18;
   else if (key === 'life')   game.coopLives += 1;
-  else if (key === 'regen')  game.upg.regen += 2;
+  else if (key === 'regen')  game.upg.regen += 3;
+  else if (key === 'multi')  game.upg.multishot = (game.upg.multishot||0) + 1;
+  else if (key === 'pierce') game.upg.pierce = (game.upg.pierce||0) + 1;
+  else if (key === 'vamp')   game.upg.vamp = (game.upg.vamp||0) + 0.15;
 }
 
-// 상점 종료 → 다음 웨이브. (호스트가 호출; 게스트는 신호로 따라감)
-export function closeShopAndContinue() {
-  if (game.phase !== 'shopping') return;
-  game.wave++;
-  if (NET.connected && NET.isHost) NET.sendFn && NET.sendFn({ t:'wave', wave:game.wave, score:game.coopScore, lives:game.coopLives, upg:game.upg });
-  startCoopWave();
-}
+// 게스트가 카드 선택 요청 → 호스트가 처리
+export function requestChooseCard(key){ if(NET.sendFn) NET.sendFn({ t:'pickReq', key }); }
+export function hostHandlePick(key){ chooseCard(key); }
 
 function coopGameOver() {
   game.phase = 'matchover';
@@ -551,8 +627,34 @@ function updateEnemyAI(enemy, dt) {
   const dist = best;
   enemy.retarget -= dt;
   if (enemy.retarget<=0){ enemy.moveDir=Math.random()<0.5?1:-1; enemy.retarget=1+Math.random()*1.5; }
+
+  // 자폭병: 무조건 돌진 → 근접 시 폭발
+  if (enemy.suicide) {
+    const spd = TANK_SPEED * (enemy.spd||0.9);
+    const nx = enemy.x + Math.sin(targetAngle)*spd*dt, nz = enemy.z + Math.cos(targetAngle)*spd*dt;
+    if (!collides(nx, enemy.z)) enemy.x = nx;
+    if (!collides(enemy.x, nz)) enemy.z = nz;
+    enemy.angle += (targetAngle-enemy.angle)*Math.min(1,6*dt); enemy._moved=spd*dt;
+    if (dist < 4.5) {
+      // 폭발: 근처 플레이어에 큰 피해
+      explode(enemy.x, enemy.z, 0xffcc33, 30);
+      camCtl.shake = Math.max(camCtl.shake, 0.6);
+      for (const p of Object.values(tanks)) {
+        if (p.id.startsWith('e')||!p.alive) continue;
+        if (Math.hypot(p.x-enemy.x, p.z-enemy.z) < 7 && p.shield<=0) {
+          p.hp -= 35; spawnDamageNumber(p.x, p.z, 35, true);
+          if (p.hp<=0){ p.hp=0; p.alive=false; explode(p.x,p.z,0xff8800,24); onTankDeath(p, enemy.id); }
+        }
+      }
+      enemy.alive=false; enemy.mesh.visible=false; scene.remove(enemy.mesh);
+      const idx=enemies.indexOf(enemy); if(idx>=0)enemies.splice(idx,1);
+      if(game.phase==='play' && enemies.length===0) coopWaveComplete();
+    }
+    return;
+  }
+
   let moveA = dist>28 ? targetAngle : targetAngle + Math.PI/2*enemy.moveDir;
-  const spd = TANK_SPEED*0.55;
+  const spd = TANK_SPEED*(enemy.spd||0.55);
   const nx = enemy.x + Math.sin(moveA)*spd*dt, nz = enemy.z + Math.cos(moveA)*spd*dt;
   if (!collides(nx, enemy.z)) enemy.x = nx;
   if (!collides(enemy.x, nz)) enemy.z = nz;
@@ -560,10 +662,16 @@ function updateEnemyAI(enemy, dt) {
   enemy._moved = spd*dt;
 
   enemy.shot -= dt;
-  if (Math.abs(diff)<0.3 && dist<48 && enemy.shot<=0) {
-    enemy.shot = 1.4 + Math.random()*0.8;
+  const fireRange = enemy.boss?60:48;
+  if (Math.abs(diff)<0.3 && dist<fireRange && enemy.shot<=0) {
+    enemy.shot = (enemy.boss?0.5:1.4) + Math.random()*0.6;
     const bx = enemy.x+Math.sin(enemy.turret)*4.6, bz = enemy.z+Math.cos(enemy.turret)*4.6;
-    spawnBullet(enemy.id, bx, bz, enemy.turret, 12);
+    if (enemy.boss) {
+      // 보스: 3연발 확산
+      for(const a of [-0.2,0,0.2]) spawnBullet(enemy.id, bx, bz, enemy.turret+a, 14);
+    } else {
+      spawnBullet(enemy.id, bx, bz, enemy.turret, enemy.dmg||12);
+    }
   }
 }
 
@@ -660,6 +768,8 @@ function pickupPowerups(tank) {
 function updateBullets(dt) {
   for (let i=bullets.length-1;i>=0;i--){
     const b=bullets[i]; b.life-=dt; let dead=false;
+    if (b.pierceLeft === undefined) b.pierceLeft = (game.mode==='coop' && !b.owner.startsWith('e')) ? (game.upg.pierce||0) : 0;
+    if (!b.hitSet) b.hitSet = new Set();
     const stepDist=BULLET_SPEED*dt, sub=Math.max(1,Math.ceil(stepDist/1.0));
     const sx=Math.sin(b.dir)*stepDist/sub, sz=Math.cos(b.dir)*stepDist/sub;
     for(let s=0;s<sub&&!dead;s++){
@@ -668,13 +778,31 @@ function updateBullets(dt) {
       const targets = b.owner.startsWith('e') ? Object.values(tanks) : [...Object.values(tanks), ...enemies];
       for(const t of targets){
         if(!t.alive||t.id===b.owner)continue;
+        if(b.hitSet.has(t.id))continue;
         // 협동에서만 플레이어끼리 오사 방지. 대전에서는 서로 맞아야 함.
         if(game.mode==='coop' && !b.owner.startsWith('e') && !t.id.startsWith('e') && b.owner!==t.id) continue;
-        if(Math.hypot(t.x-b.x,t.z-b.z)<HIT_RADIUS){
+        const hitR = HIT_RADIUS * (t.boss?1.8:(t.mesh&&t.mesh.scale?t.mesh.scale.x:1));
+        if(Math.hypot(t.x-b.x,t.z-b.z)<hitR){
+          b.hitSet.add(t.id);
           if(t.shield>0){ explode(b.x,b.z,0x3a9bff,8); }
-          else { t.hp-=b.dmg; explode(b.x,b.z,0xffaa44,10); }
-          dead=true;
-          if(t.hp<=0){ t.hp=0; t.alive=false; explode(t.x,t.z,0xff8800,24); onTankDeath(t,b.owner); }
+          else {
+            t.hp-=b.dmg;
+            explode(b.x,b.z,0xffaa44,10);
+            spawnDamageNumber(t.x, t.z, Math.round(b.dmg), t.boss);
+            // 흡혈 (협동, 플레이어 발사)
+            if(game.mode==='coop' && !b.owner.startsWith('e') && (game.upg.vamp||0)>0){
+              const heal = tanks[b.owner];
+              if(heal){ const cap=MAX_HP+game.upg.maxHpBonus; heal.hp=Math.min(cap, heal.hp + b.dmg*game.upg.vamp); }
+            }
+          }
+          if(t.hp<=0){ t.hp=0; t.alive=false; explode(t.x,t.z,0xff8800, t.boss?60:24);
+            camCtl.shake=Math.max(camCtl.shake, t.boss?1.4:0.35);
+            juice.hitStop=Math.max(juice.hitStop, t.boss?0.12:0.04);
+            onTankDeath(t,b.owner);
+          }
+          // 관통 처리
+          if(b.pierceLeft>0){ b.pierceLeft--; }
+          else { dead=true; }
           break;
         }
       }
@@ -684,6 +812,22 @@ function updateBullets(dt) {
     if(dead){ scene.remove(b.mesh); bullets.splice(i,1); }
   }
 }
+
+// ===== 데미지 넘버 =====
+function spawnDamageNumber(x, z, amount, big){
+  damageNumbers.push({ x, z, y:3, amount, life:0.9, big:!!big });
+}
+
+// ===== 콤보 =====
+function addCombo(){
+  juice.combo++;
+  juice.comboTimer = 2.2;   // 2.2초 안에 다음 킬 없으면 리셋
+  if (juice.combo >= 3) {
+    hooks.onCombo && hooks.onCombo({ combo: juice.combo });
+    if (juice.combo % 5 === 0) { camCtl.shake = Math.max(camCtl.shake, 0.5); hooks.onFlash && hooks.onFlash('#ff66aa', 0.2); }
+  }
+}
+function comboMultiplier(){ return 1 + Math.min(juice.combo, 20) * 0.1; }   // 최대 3배
 
 function safeRespawnPoint() {
   // 장애물에 겹치지 않는 리스폰 좌표 탐색
@@ -702,7 +846,12 @@ function onTankDeath(deadTank, killerId) {
   } else {
     // 협동
     if (deadTank.id.startsWith('e')) {
-      game.coopScore += 50;
+      addCombo();
+      const mult = comboMultiplier();
+      const gained = Math.round((deadTank.reward||50) * mult);
+      game.coopScore += gained;
+      spawnCoins(deadTank.x, deadTank.z, deadTank.boss?12:4);
+      if (deadTank.boss) { hooks.onFlash && hooks.onFlash('#ffd166', 0.4); hooks.onBanner && hooks.onBanner('보스 격파! 💰 +'+gained, '#ffd166', 1600); }
       // 적을 즉시 배열에서 제거 + 씬에서 제거 (누적/오판정 방지)
       deadTank.mesh.visible = false;
       scene.remove(deadTank.mesh);
@@ -736,6 +885,57 @@ function updateEffects(dt) {
     if(e.life<=0||e.mesh.position.y<0){ scene.remove(e.mesh); effects.splice(i,1); }
   }
   powerups.forEach(p=>{ p.spin+=dt*2; p.mesh.rotation.y=p.spin; p.mesh.position.y=2+Math.sin(p.spin)*0.3; });
+  updateCoins(dt);
+  updateDamageNumbers(dt);
+  // 콤보 타이머
+  if(juice.comboTimer>0){ juice.comboTimer-=dt; if(juice.comboTimer<=0){ juice.combo=0; hooks.onCombo && hooks.onCombo({ combo:0 }); } }
+}
+
+// ===== 코인 (처치 드롭 → 플레이어에게 자석처럼 빨려옴) =====
+function spawnCoins(x, z, n){
+  for(let i=0;i<n;i++){
+    const m=new THREE.Mesh(new THREE.CylinderGeometry(0.35,0.35,0.12,10),
+      new THREE.MeshStandardMaterial({color:0xffd166,emissive:0xffaa00,emissiveIntensity:1.4,metalness:0.6,roughness:0.3}));
+    m.rotation.x=Math.PI/2; m.position.set(x+(Math.random()-0.5)*3, 2, z+(Math.random()-0.5)*3);
+    scene.add(m);
+    coins.push({ mesh:m, x:m.position.x, z:m.position.z, life:6, spin:Math.random()*6 });
+  }
+}
+function updateCoins(dt){
+  // 가장 가까운 플레이어 탱크로 이동
+  const players = Object.values(tanks).filter(t=>!t.id.startsWith('e') && t.alive);
+  for(let i=coins.length-1;i>=0;i--){
+    const c=coins[i]; c.life-=dt; c.spin+=dt*8;
+    let near=null, best=Infinity;
+    for(const p of players){ const d=Math.hypot(p.x-c.x,p.z-c.z); if(d<best){best=d;near=p;} }
+    if(near){
+      const pull = best<14 ? 26 : 6;   // 가까우면 확 빨려옴
+      const ang=Math.atan2(near.x-c.x, near.z-c.z);
+      c.x+=Math.sin(ang)*pull*dt; c.z+=Math.cos(ang)*pull*dt;
+      if(best<2.2){ game.coopScore+=5; scene.remove(c.mesh); coins.splice(i,1); continue; }
+    }
+    c.mesh.position.set(c.x, 2+Math.sin(c.spin)*0.2, c.z); c.mesh.rotation.z=c.spin;
+    if(c.life<=0){ scene.remove(c.mesh); coins.splice(i,1); }
+  }
+}
+
+// ===== 데미지 넘버 (화면 투영) =====
+function updateDamageNumbers(dt){
+  for(let i=damageNumbers.length-1;i>=0;i--){
+    const d=damageNumbers[i]; d.life-=dt; d.y+=dt*3;
+    if(d.life<=0) damageNumbers.splice(i,1);
+  }
+  // 화면 좌표로 투영해서 UI에 전달
+  if(hooks.onDamageNumbers && camera){
+    const out=[];
+    for(const d of damageNumbers){
+      const v=new THREE.Vector3(d.x, d.y, d.z).project(camera);
+      if(v.z>1) continue;
+      out.push({ sx:(v.x*0.5+0.5)*innerWidth, sy:(-v.y*0.5+0.5)*innerHeight,
+        amount:d.amount, alpha:Math.max(0,d.life/0.9), big:d.big });
+    }
+    hooks.onDamageNumbers(out);
+  }
 }
 
 function updateCameraControls(dt) {
@@ -757,6 +957,14 @@ function updateCamera() {
   camera.position.x+=(tx-camera.position.x)*0.12;
   camera.position.z+=(tz-camera.position.z)*0.12;
   camera.position.y+=(ty-camera.position.y)*0.12;
+  // 화면 흔들림 (도파민)
+  if(camCtl.shake>0){
+    const s=camCtl.shake;
+    camera.position.x += (Math.random()-0.5)*s*2.4;
+    camera.position.y += (Math.random()-0.5)*s*2.4;
+    camera.position.z += (Math.random()-0.5)*s*2.4;
+    camCtl.shake = Math.max(0, camCtl.shake - 3.5*0.016);
+  }
   camera.lookAt(me.x, 2, me.z);
 }
 
@@ -768,8 +976,9 @@ export function buildStateSnapshot() {
     round:game.round, phase:game.phase };
   for(const id in tanks) snap.tanks[id]=pack(tanks[id]);
   if(game.mode==='versus'){ snap.scoreMe=game.scoreFoe; snap.scoreFoe=game.scoreMe; }
-  else { snap.enemies=enemies.map(e=>({x:e.x,z:e.z,a:e.angle,tu:e.turret,hp:e.hp,mhp:e.maxHp,al:e.alive,id:e.id}));
-         snap.wave=game.wave; snap.coopScore=game.coopScore; snap.coopLives=game.coopLives;
+  else { snap.enemies=enemies.map(e=>({x:e.x,z:e.z,a:e.angle,tu:e.turret,hp:e.hp,mhp:e.maxHp,al:e.alive,id:e.id,sz:(e.mesh&&e.mesh.scale?e.mesh.scale.x:1)}));
+         snap.wave=game.wave; snap.coopScore=game.coopScore; snap.coopLives=game.coopLives; snap.combo=juice.combo;
+         snap.coins=coins.map(c=>({x:c.x,z:c.z}));
          snap.powerups=powerups.map(p=>({x:p.x,z:p.z,type:p.type})); }
   return snap;
 }
@@ -787,7 +996,8 @@ export function applyStateSnapshot(msg) {
   applyTransforms();
   syncGuestBullets(msg.bullets||[]);
   if(msg.mode==='coop'){ syncGuestEnemies(msg.enemies||[]); syncGuestPowerups(msg.powerups||[]);
-    game.wave=msg.wave; game.coopScore=msg.coopScore; game.coopLives=msg.coopLives; game.mode='coop'; }
+    game.wave=msg.wave; game.coopScore=msg.coopScore; game.coopLives=msg.coopLives; game.mode='coop';
+    if(msg.combo!==undefined) juice.combo=msg.combo; }
   else { game.scoreMe=msg.scoreMe; game.scoreFoe=msg.scoreFoe; game.round=msg.round; }
   updateHudExternal(msg);
 }
@@ -800,8 +1010,9 @@ function syncGuestBullets(list){
 function syncGuestEnemies(list){
   const seen={};
   list.forEach(e=>{ seen[e.id]=true;
-    if(!guestEnemies[e.id]){ const m=createEnemyModel(); scene.add(m); guestEnemies[e.id]={mesh:m}; }
+    if(!guestEnemies[e.id]){ const m=createEnemyModel(); m.scale.setScalar(e.sz||1); scene.add(m); guestEnemies[e.id]={mesh:m}; }
     const g=guestEnemies[e.id]; g.mesh.position.set(e.x,0,e.z); g.mesh.rotation.y=e.a;
+    if(e.sz) g.mesh.scale.setScalar(e.sz);
     g.mesh.userData.turret.rotation.y=e.tu-e.a; g.mesh.visible=e.al;
   });
   for(const id in guestEnemies) if(!seen[id]){ scene.remove(guestEnemies[id].mesh); delete guestEnemies[id]; }
@@ -816,22 +1027,15 @@ function syncGuestPowerups(list){
 export function handleWaveEvent(msg){
   game.wave=msg.wave; game.coopScore=msg.score; game.coopLives=msg.lives;
   if(msg.upg) game.upg = msg.upg;
-  // 게스트: 상점 닫고 다음 웨이브 진행 상태로
-  if(game.phase==='shopping'){ game.phase='play'; hooks.onShopClose && hooks.onShopClose(); }
+  // 게스트: 카드 창 닫고 다음 웨이브 진행 상태로
+  if(game.phase==='cardpick' || game.phase==='wavebreak'){ game.phase='play'; hooks.onShopClose && hooks.onShopClose(); }
 }
 
-// 게스트: 호스트가 상점을 열었다는 신호
-export function handleShopEvent(msg){
+// 게스트: 호스트가 카드 선택 창을 열었다는 신호
+export function handleCardsEvent(msg){
   game.coopScore=msg.score; game.coopLives=msg.lives; game.wave=msg.wave;
-  game.phase='shopping';
-  hooks.onShop && hooks.onShop({ score: game.coopScore, wave: game.wave });
-}
-
-// 게스트: 호스트가 업그레이드를 적용했다는 신호 (점수/스탯 동기화만)
-export function handleUpgApplied(msg){
-  game.coopScore=msg.score; game.coopLives=msg.lives;
-  if(msg.upg) game.upg = msg.upg;
-  hooks.onShop && hooks.onShop({ score: game.coopScore, wave: game.wave, refresh:true });
+  game.phase='cardpick';
+  hooks.onCardPick && hooks.onCardPick({ cards: msg.cards, wave: game.wave });
 }
 
 // ===== HUD 갱신 =====
@@ -843,6 +1047,7 @@ function updateHudExternal(snapshot){
     wave: game.wave, coopScore: game.coopScore, coopLives: game.coopLives,
     reloadRatio: Math.min(1,(performance.now()-lastShot)/(me&&me.rapid>0?RELOAD_MS*0.4:RELOAD_MS)),
     boostFuel: game.boostFuel, shield: me?me.shield:0, rapid: me?me.rapid:0,
+    combo: juice.combo,
     fromSnapshot: !!snapshot
   });
 }
@@ -850,8 +1055,10 @@ function updateHudExternal(snapshot){
 // ===== 메인 루프 =====
 function animate(){
   requestAnimationFrame(animate);
-  const dt=Math.min(0.05, clock.getDelta());
+  let dt=Math.min(0.05, clock.getDelta());
   refreshAimFromMouse();
+  // 히트스톱: 순간 정지로 타격감 (이펙트/카메라는 계속 갱신)
+  if(juice.hitStop>0){ juice.hitStop-=dt; dt=0; }
   if(game.phase==='play'){
     const hostSide = NET.isHost||NET.solo||!NET.connected;
     if(hostSide){
@@ -897,10 +1104,13 @@ export function resetToMenu(){
   guestBullets.forEach(m=>scene.remove(m)); guestBullets=[];
   Object.values(guestEnemies).forEach(g=>scene.remove(g.mesh)); guestEnemies={};
   guestPowerups.forEach(g=>scene.remove(g)); guestPowerups=[];
+  coins.forEach(c=>scene.remove(c.mesh)); coins=[];
+  damageNumbers=[];
+  juice.combo=0; juice.comboTimer=0; juice.hitStop=0;
 }
 
 export function setSoloAI(v){ AI.active=v; }
-export function shootFromNet(msg){ spawnBullet(msg.ownerId || 'p2', msg.x, msg.z, msg.dir, currentBulletDmg()); }
+export function shootFromNet(msg){ fireSpread(msg.ownerId || 'p2', msg.x, msg.z, msg.dir, currentBulletDmg()); }
 
 function onResize(){
   camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
@@ -914,5 +1124,9 @@ export const __test = {
   spawnEnemy, spawnCoopTanks, buildMap, game,
   getLocalAim:()=>localAim,
   getCameraState:()=>camera ? ({ x: camera.position.x, y: camera.position.y, z: camera.position.z }) : null,
-  getCamCtl:()=>({ yaw: camCtl.yaw, dist: camCtl.dist, height: camCtl.height }),
+  getCamCtl:()=>({ yaw: camCtl.yaw, dist: camCtl.dist, height: camCtl.height, shake: camCtl.shake }),
+  getJuice:()=>({ combo: juice.combo, comboTimer: juice.comboTimer, hitStop: juice.hitStop }),
+  getPendingCards:()=>pendingCards.slice(),
+  getCoins:()=>coins.length,
+  getUpg:()=>({ ...game.upg }),
 };

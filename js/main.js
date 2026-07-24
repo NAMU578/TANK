@@ -6,9 +6,16 @@ import { hostGame, joinGame, cleanup, copyCode, requestBuy } from './net.js';
 const $ = id => document.getElementById(id);
 const screens = { menu:$('menu'), mode:$('modeScreen'), host:$('hostScreen'), join:$('joinScreen') };
 let selectedMode = 'versus', selectedMap = 'bunker';
+let shopAutoTimer = null;
+let shopCountdownTimer = null;
 
 function show(name){ Object.values(screens).forEach(s=>s.classList.add('hidden')); if(screens[name])screens[name].classList.remove('hidden'); }
 function hideAll(){ Object.values(screens).forEach(s=>s.classList.add('hidden')); }
+
+function clearShopTimers(){
+  if (shopAutoTimer) { clearTimeout(shopAutoTimer); shopAutoTimer = null; }
+  if (shopCountdownTimer) { clearInterval(shopCountdownTimer); shopCountdownTimer = null; }
+}
 
 // ===== 훅 연결 =====
 hooks.onBanner = (text, color, dur)=>{
@@ -18,7 +25,7 @@ hooks.onBanner = (text, color, dur)=>{
   if(dur)window.__bannerT=setTimeout(()=>{ b.style.display='none'; }, dur);
 };
 hooks.setNames = (me, foe)=>{ $('meName').textContent=me; $('foeName').textContent=foe; };
-hooks.onModeEnd = ()=>{ $('shop').classList.remove('show'); cleanup(); resetToMenu(); show('menu'); };
+hooks.onModeEnd = ()=>{ clearShopTimers(); $('shop').classList.remove('show'); cleanup(); resetToMenu(); show('menu'); };
 hooks.onHud = (s)=>{
   $('meHp').style.width=Math.max(0,s.meHp)+'%';
   if(s.mode==='versus'){
@@ -83,12 +90,47 @@ function renderShop(info){
 hooks.onShop = (info)=>{
   $('shop').classList.add('show');
   renderShop(info);
+  clearShopTimers();
+  const isHostSide = NET.isHost || NET.solo || !NET.connected;
+  if (isHostSide) {
+    let left = 12;
+    $('shopTimer').textContent = `${left}초 뒤 자동으로 다음 웨이브가 시작됩니다`;
+    shopCountdownTimer = setInterval(()=>{
+      left -= 1;
+      if (left <= 0) {
+        clearShopTimers();
+        $('shop').classList.remove('show');
+        closeShopAndContinue();
+        return;
+      }
+      $('shopTimer').textContent = `${left}초 뒤 자동으로 다음 웨이브가 시작됩니다`;
+    }, 1000);
+    shopAutoTimer = setTimeout(()=>{
+      clearShopTimers();
+      $('shop').classList.remove('show');
+      closeShopAndContinue();
+    }, 12000);
+  } else {
+    $('shopTimer').textContent = '호스트가 다음 웨이브를 시작하면 자동으로 진행됩니다';
+  }
 };
-hooks.onShopClose = ()=>{ $('shop').classList.remove('show'); };
+hooks.onShopClose = ()=>{ clearShopTimers(); $('shop').classList.remove('show'); };
 
 $('shopNextBtn').addEventListener('click', ()=>{
+  clearShopTimers();
   $('shop').classList.remove('show');
   closeShopAndContinue();
+});
+
+window.addEventListener('keydown', e=>{
+  if (e.key === 'Enter' && $('shop').classList.contains('show')) {
+    const isHostSide = NET.isHost || NET.solo || !NET.connected;
+    if (isHostSide) {
+      clearShopTimers();
+      $('shop').classList.remove('show');
+      closeShopAndContinue();
+    }
+  }
 });
 
 // ===== 메뉴 이벤트 =====

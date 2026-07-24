@@ -106,6 +106,27 @@
   @keyframes spin{to{transform:rotate(360deg);}}
   .loading{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:30;
     background:#060812;color:var(--muted);font-size:1.1rem;}
+
+  /* 협동 업그레이드 상점 */
+  #shop{position:fixed;inset:0;z-index:18;display:none;align-items:center;justify-content:center;padding:20px;
+    background:rgba(4,6,14,.72);backdrop-filter:blur(6px);}
+  #shop.show{display:flex;}
+  .shop-card{width:min(640px,100%);background:var(--panel);border:1px solid var(--line);
+    border-radius:24px;box-shadow:0 30px 80px rgba(0,0,0,.6);padding:28px;text-align:center;}
+  .shop-card h2{margin:0 0 6px;font-size:1.7rem;}
+  .shop-card h2 span{color:var(--gold);}
+  .shop-sub{color:var(--muted);margin:0 0 18px;}
+  .shop-sub b{color:var(--gold);}
+  .shop-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:18px;}
+  .shop-item{padding:16px 12px;border-radius:16px;border:1px solid var(--line);
+    background:rgba(255,255,255,.03);cursor:pointer;transition:.15s;}
+  .shop-item:hover:not(.disabled){border-color:var(--accent);background:rgba(89,224,255,.08);transform:translateY(-2px);}
+  .shop-item.disabled{opacity:.4;cursor:not-allowed;}
+  .shop-item .ico{font-size:1.9rem;}
+  .shop-item .nm{font-weight:800;margin:6px 0 2px;}
+  .shop-item .ds{color:var(--muted);font-size:.8rem;line-height:1.4;min-height:34px;}
+  .shop-item .cost{margin-top:8px;font-weight:800;color:var(--gold);}
+  .shop-wait{color:var(--muted);margin-top:10px;font-size:.9rem;}
 </style>
 </head>
 <body>
@@ -218,7 +239,7 @@
       <div class="bar"><span id="foeHp" style="width:100%"></span></div>
     </div>
   </div>
-  <div class="controls-note">이동 <b>WASD</b> · 조준 <b>마우스</b> · 발포 <b>좌클릭</b> · 부스트 <b>Shift</b></div>
+  <div class="controls-note">이동 <b>WASD</b> · 조준 <b>마우스</b> · 발포 <b>좌클릭</b> · 부스트 <b>Shift</b> · 카메라 <b>← → ↑ ↓</b></div>
   <div class="bottom-right">
     <div class="gauge-label">재장전</div>
     <div class="gauge"><span id="reloadBar"></span></div>
@@ -228,6 +249,17 @@
 </div>
 <div class="crosshair" id="crosshair"></div>
 <div id="banner"><div class="msg" id="bannerMsg"></div></div>
+
+<!-- 협동 업그레이드 상점 -->
+<div id="shop">
+  <div class="shop-card">
+    <h2>웨이브 <span id="shopWave">1</span> 클리어 — 증강 상점</h2>
+    <p class="shop-sub">포인트로 업그레이드를 구매하세요. 남은 포인트: <b id="shopPoints">0</b></p>
+    <div class="shop-grid" id="shopGrid"></div>
+    <button class="btn primary" id="shopNextBtn" style="margin-top:8px;">다음 웨이브 시작 →</button>
+    <p class="shop-wait" id="shopWait" style="display:none;">호스트가 다음 웨이브를 시작하기를 기다리는 중...</p>
+  </div>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
 <script type="importmap">
